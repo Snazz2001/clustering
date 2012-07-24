@@ -1,0 +1,201 @@
+Hierarchialclustering_v2 <- function()
+{
+  
+  # Import the libraries
+  library("gdata");library("stringr");
+  library("fastcluster")
+  
+  # Load the Applictaions data
+  X_allapps       <- read.csv('C:\\My Projects\\Zheng - Clustering\\Data\\Jan2011_AllL0_Apps_V3.csv');
+  Long_Lat_data   <- read.csv('C:\\My Projects\\Zheng - Clustering\\Data\\distance2.csv');
+  LonLat_forapps  <- read.csv('C:\\My Projects\\Zheng - Clustering\\Data\\l0cor5000.csv');
+  
+  # Clean the IP address field by fremoving . in the middle  
+  ip_cleaned_all <- {};
+  for (p in 1:dim(X_allapps)[1])
+  {
+    strings <- trim(strsplit(as.character(X_allapps[p,1]), "\\."));
+    ip_cleaned <- trim(str_c(unlist(strings)[1],unlist(strings)[2], unlist(strings)[3],unlist(strings)[4]))
+    ip_cleaned_all <- rbind(ip_cleaned_all, as.numeric(ip_cleaned));
+  }
+  
+  # Select APPLICATION DATE, SORTCODE, LOAN AMOUNT, IPADDRESS CLEANED and Score
+  X_allapps_ip     <- cbind(X_allapps$ApplicationDate, X_allapps$SortCode,X_allapps$Age,X_allapps$IPAddressCleaned);
+  X_whole_apps     <- cbind(seq(1,dim(as.matrix(X_allapps))[1],1),as.matrix(X_allapps$AppDate),as.matrix(X_allapps_ip));
+  
+  # Clean the IP strings for the 5000 applications
+  ipaddress_strings    <- trim(as.character(X_allapps[,1]));
+  ipaddress_substrings <- strsplit(ipaddress_strings, "\\.");
+  ipaddress_strings_cleaned <- {};
+  for (p in 1:5000)   # No of IPaddresses in the list
+  {
+    print(p);
+    curr_value <- unlist(ipaddress_substrings[p]);
+    print(curr_value);
+    ip_address_cleaned <- {};
+    for (m in 1:4)   
+    {
+      curr_value_octet <- curr_value [m];
+      if (length(unlist(strsplit(curr_value_octet,""))) ==2) {
+        curr_value_octet <- str_c("0",curr_value_octet)
+      }
+      if (length(unlist(strsplit(curr_value_octet,""))) ==1) {
+        curr_value_octet <- str_c("00",curr_value_octet)
+      }
+      ip_address_cleaned <- c(ip_address_cleaned,curr_value_octet);  
+    }
+    print(ip_address_cleaned);
+    ipaddress_strings_cleaned <- rbind(ipaddress_strings_cleaned,str_c(ip_address_cleaned[1],ip_address_cleaned[2],ip_address_cleaned[3],ip_address_cleaned[4]));
+  }
+  
+  # Clean the Sortcode for the 5000 applications
+  sortcode_strings <- as.character(X_allapps_ip[,2]);
+  sortcode_strings_cleaned <- {};
+  for (p in 1:5000) 
+  {
+    print(p);
+    curr_value <- unlist(strsplit(sortcode_strings[p], split = character(1)));
+    sortcode_cleaned <- sortcode_strings[p];
+    if (length(curr_value) == 5)    {
+      sortcode_cleaned <- str_c('0', sortcode_strings[p])
+    }
+    print(sortcode_cleaned);
+    sortcode_strings_cleaned <- rbind(sortcode_strings_cleaned,as.numeric(sortcode_cleaned));
+  }
+  
+  # Lets start the clustering for a window
+  start_date  <- '01/01/2011';   end_date    <- '08/01/2011';
+  for (m in 1:1) {
+    Clustering_Windowed_input <-  cbind (as.numeric((X_whole_apps[((X_whole_apps[,2] >= start_date) & (X_whole_apps[,2] < end_date)),4])),
+                                        +as.numeric((X_whole_apps[((X_whole_apps[,2] >= start_date) & (X_whole_apps[,2] < end_date)),5])),
+                                        +as.numeric((X_whole_apps[((X_whole_apps[,2] >= start_date) & (X_whole_apps[,2] < end_date)),6])));
+    
+    # Add a rwo index
+    Clustering_Windowed_input_indices <- cbind(as.numeric((X_whole_apps[((X_whole_apps[,2] >= start_date) & (X_whole_apps[,2] < end_date)),1])));
+    Clustering_Windowed_input         <- cbind(Clustering_Windowed_input_indices,Clustering_Windowed_input);
+    # Add sortcode and IP address cleaned
+    Clustering_Windowed_input_cleaned <- cbind(Clustering_Windowed_input[1:5000,1],as.matrix(sortcode_strings_cleaned[1:5000,1]),Clustering_Windowed_input[1:5000,3],ipaddress_strings_cleaned[1:5000,1]);
+    Clustering_Windowed_input         <- Clustering_Windowed_input_cleaned;
+    
+    # Add Longitude and Latitude 
+    Clustering_Windowed_input <- cbind(Clustering_Windowed_input,LonLat_forapps[,15],LonLat_forapps[,16], as.character(LonLat_forapps[,8]));
+    
+    # Add Ondueremaining
+    Clustering_Windowed_input <- cbind(Clustering_Windowed_input[1:5000,1:7],as.numeric(as.character(X_allapps[1:5000,9])),as.numeric(as.character(X_allapps[1:5000,10])));
+    
+    # Add Date
+    Clustering_Windowed_input <- cbind(Clustering_Windowed_input,as.Date(X_whole_apps[1:5000,2]));
+    
+    dist_others <- dist(Clustering_Windowed_input[1:5000,2:4]);
+    snaplonlat   <- as.matrix(Long_Lat_data[1:5000,2:5001]);
+    Total_Added_Distance <- as.matrix(dist_others)+t(snaplonlat)+snaplonlat;
+    # Run the method  - Hierarchial clustering 
+    hc_op <- hclust(as.dist(Total_Added_Distance));
+    
+
+    dist_others <- dist(Clustering_Windowed_input[1:50,2:4]);
+    snaplonlat   <- as.matrix(Long_Lat_data[1:50,2:51]);
+    Total_Added_Distance <- as.matrix(dist_others)+t(snaplonlat)+snaplonlat;
+    # Run the method  - Hierarchial clustering 
+    hc_op <- hclust(as.dist(Total_Added_Distance));
+    
+    
+    
+    
+    # Cut the tree into different layers and then look at the Clusters and look at Risk profile (segments level)
+    treecut_op_50 <- cutree(hc_op,k = 50);
+    plot(treecut_op_50);
+    
+    #####################################################################################
+    ###########For the variables,lets do WDU estimation from Variables CDFs and Clustering######
+    #####################################################################################
+    # For SORTCODE
+    par(mfrow=c(1,2));
+    sortcode_cdfcurve <- ecdf(Clustering_Windowed_input[1:5000,2]);
+    plot(environment(sortcode_cdfcurve)$x, environment(sortcode_cdfcurve)$y, main = "CDF of Sortcode before Transformation");
+    sortcode_distcdfcurve <- ecdf(dist(Clustering_Windowed_input[1:5000,2]));
+    plot(environment(sortcode_distcdfcurve)$x, environment(sortcode_distcdfcurve)$y, main = "CDF of Sortcode Pairwise distances");
+    
+    transformed_probability_intervals <- seq(0,1,1/1000);
+    plot3d(environment(sortcode_distcdfcurve)$x, environment(sortcode_distcdfcurve)$y, transformed_probability_intervals, main = '3D representation')
+    x_values_sc <- {};
+    for (m in 2:length(transformed_probability_intervals)) {
+      x_values_sc <- c(x_values_ip,environment(sortcode_distcdfcurve)$x[max(which(environment(sortcode_distcdfcurve)$y<transformed_probability_intervals[m]))]);
+    }
+    # Lets get the WDU and Pairwise distance metric
+    wongadistanceunit_op_scode<- cbind(seq(1,1000,1),x_values_sc);
+    plot(wongadistanceunit_op_scode[,2],wongadistanceunit_op_scode[,1], main = 'WongaDistanceUnit_Sortcode')
+    write.csv(wongadistanceunit_op_ipaddress, file = "C:\\WORK\\RAD-99-FraudClustering\\HClust_Results\\WDU_Sortcode.csv")
+    
+    
+    # For IPADDRESS
+    par(mfrow=c(1,2));
+    ipaddress_cdfcurve <- ecdf(Clustering_Windowed_input[1:5000,4]);
+    plot(environment(ipaddress_cdfcurve)$x, environment(ipaddress_cdfcurve)$y, main = "CDF of IPADDRESS before transformation");
+    ipaddress_distcdfcurve <- ecdf(dist(Clustering_Windowed_input[1:5000,4]));
+    plot(environment(ipaddress_distcdfcurve)$x, environment(ipaddress_distcdfcurve)$y, main = "CDF of IPADDRESS pairwise distances");
+
+    # Lets divide the CDF of the IP address into 1000 segments using probabilitistic curve
+    transformed_probability_intervals <- seq(0,1,1/1000);
+    plot3d(environment(ipaddress_distcdfcurve)$x, environment(ipaddress_distcdfcurve)$y, transformed_probability_intervals, main = '3D representation')
+    
+    x_values_ip_raw <- {};
+    for (m in 2:length(transformed_probability_intervals)) {
+      x_values_ip_raw <- c(x_values_ip_raw,environment(ipaddress_cdfcurve)$x[max(which(environment(ipaddress_cdfcurve)$y<transformed_probability_intervals[m]))]);
+    }
+
+    # Lets get the WDU and Pairwise distance metric
+    wongadistanceunit_op_ipaddress_raw <- cbind(seq(1,1000,1),x_values_ip_raw);
+    plot(wongadistanceunit_op_ipaddress_raw[,2],wongadistanceunit_op_ipaddress_raw[,1], main = 'WongaDistanceUnit_Ipaddress')
+    write.csv(wongadistanceunit_op_ipaddress_raw, file = "C:\\WORK\\RAD-99-FraudClustering\\HClust_Results\\WDU_Ipaddress_raw.csv")
+    
+    #####################################################################################
+    ########################Extract the Cluster Nodes KPIs###############################
+    #####################################################################################
+    clusterKPIs_50 <- clusterKPIs(treecut_op_50,50,X_allapps,Clustering_Windowed_input);
+    
+  clusterKPIs <- function (treecut_op,NUM_NODES,X_allapps,Clustering_Windowed_input) {
+    mean_scores_for_all_clusters <- {};
+    no_of_loans_all_clusters <- {};
+   # arrears_count_all_clusters <- {};
+    size_count_all <- {};
+    yout <- {};
+    for (p in 1:NUM_NODES)  
+      {
+      cluster_apps <- Clustering_Windowed_input[as.numeric(Clustering_Windowed_input[which(treecut_op==p),1]),];
+      size_count <- dim(Clustering_Windowed_input[as.numeric(Clustering_Windowed_input[which(treecut_op==p),1]),])[1];
+      mean_score    <- floor(mean(as.numeric(X_allapps[as.numeric(Clustering_Windowed_input[which(treecut_op==p),1]),10])));
+      no_of_loans   <- length(na.omit(as.numeric(as.character(X_allapps[as.numeric(Clustering_Windowed_input[which(treecut_op==p),1]),3]))));
+      arrears_count <- length(which(na.omit(as.numeric(as.character(X_allapps[as.numeric(Clustering_Windowed_input[which(treecut_op==p),1]),9])))>0));
+      
+      print(paste("Applications belonging to Cluster", p, "Av_MixedScore",mean_score, "Num_Loans",no_of_loans, "Num_Arrears", arrears_count, "ARate",((arrears_count/no_of_loans)*100)));
+      size_count_all <- c(size_count_all,size_count);
+      mean_scores_for_all_clusters <- c(mean_scores_for_all_clusters,mean_score);
+      no_of_loans_all_clusters <- c(mean_scores_for_all_clusters,no_of_loans);
+     # arrears_count_all_clusters <- c(mean_scores_for_all_clusters,arrears_count);
+    }
+    yout <- cbind(mean_scores_for_all_clusters,no_of_loans_all_clusters,arrears_count_all_clusters,size_count_all);
+    return(yout);
+   }
+    
+    # Pick out all the clusters that are less than say 400 Mixed Score
+    low_score_indices <- which(mean_scores_for_cluster_all<400);
+    X_whole_apps[Clustering_Windowed_input[which(treecut_op==low_score_indices),1],];
+    
+    size_for_all_clusters<- {};
+    for (index in 1:2500) {
+      size_for_all_clusters <- c(size_for_all_clusters,dim(Clustering_Windowed_input[as.numeric(Clustering_Windowed_input[which(treecut_op==index),1]),])[1]);
+    }
+
+    
+    # Update to the next window
+    Clustering_Windowed_input <- cbind(seq(1,dim(Clustering_Windowed_input)[1],1),Clustering_Windowed_input);
+    print(paste('Clustering applications from ', start_date,'to', (as.Date(end_date)-1)));
+    start_date <- as.Date(start_date) + 1; end_date   <- as.Date(end_date) + 1;
+    Sys.sleep(5);
+  }
+  
+  print(paste('End of Analysis'));
+  
+  
+}

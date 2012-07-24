@@ -1,0 +1,247 @@
+Hierarchialclustering_v9 <- function()
+{
+  # Import the libraries used in the HCLUST code = Include Income and MobileNumbers
+  library("gdata");  
+  library("stringr");    
+  library("fastcluster");
+  library("stringr");    
+  library("mecdf");
+  library("fCopulae");
+  
+  # Load the L0 Applications data from Jan 2011
+  X_allapps       <- read.csv('C:\\WORK\\RAD-99-FraudClustering\\Data\\Dataset4\\Jan2011_AllL0_Apps_V6.csv');
+  LonLat_forapps  <- read.csv('C:\\WORK\\RAD-99-FraudClustering\\Data\\Dataset4\\l0cor5000.csv');
+  
+  
+  # Clean the IP strings for the first 5000 applications
+  ipaddress_strings    <- trim(as.character(X_allapps[,1]));
+  ipaddress_substrings <- strsplit(ipaddress_strings, "\\.");
+  ipaddress_strings_cleaned <- {};
+  NUM_APPLICATIONS <- 5000;
+  for (p in 1:NUM_APPLICATIONS)   # No of IPaddresses in the list
+  {
+    print(p);
+    curr_value <- unlist(ipaddress_substrings[p]);
+    print(curr_value);
+    ip_address_cleaned <- {};
+    for (m in 1:4)   
+    {
+      curr_value_octet <- curr_value [m];
+      if (length(unlist(strsplit(curr_value_octet,""))) ==2) {
+        curr_value_octet <- str_c("0",curr_value_octet)
+      }
+      if (length(unlist(strsplit(curr_value_octet,""))) ==1) {
+        curr_value_octet <- str_c("00",curr_value_octet)
+      }
+      ip_address_cleaned <- c(ip_address_cleaned,curr_value_octet);  
+    }
+    print(ip_address_cleaned);
+    ipaddress_strings_cleaned <- rbind(ipaddress_strings_cleaned,str_c(ip_address_cleaned[1],ip_address_cleaned[2],ip_address_cleaned[3],ip_address_cleaned[4]));
+  }
+  
+  # Clean the Sortcode for the 5000 applications
+  sortcode_strings <- as.character(X_allapps_ip[,2]);
+  sortcode_strings_cleaned <- {};
+  for (p in 1: dim(X_whole_apps)[1])  # NUM_APPLICATIONS
+  {
+    print(p);
+    curr_value <- unlist(strsplit(sortcode_strings[p], split = character(1)));
+    sortcode_cleaned <- sortcode_strings[p];
+    if (length(curr_value) == 5)    {
+      sortcode_cleaned <- str_c('0', sortcode_strings[p])
+    }
+    print(sortcode_cleaned);
+    sortcode_strings_cleaned <- rbind(sortcode_strings_cleaned,as.numeric(sortcode_cleaned));
+  }
+  
+  # Select the variables - Sortcode,Age,Ipaddresscleaned,Income,MobileNo 
+  X_allapps_ip     <- cbind(X_allapps$Sortcode,X_allapps$Age,X_allapps$Appaddresscleaned,X_allapps$Income,as.numeric(as.character(X_allapps$Mobilenumber)),as.numeric(ipaddress_strings_cleaned));
+  X_whole_apps     <- cbind(seq(1,dim(as.matrix(X_allapps))[1],1),as.matrix(X_allapps$Appdate),as.matrix(X_allapps_ip));
+  
+  
+  # Lets start the clustering for a window
+  start_date  <- '01/01/2011';   
+  end_date    <- '15/01/2011';
+  for (m in 1:1) {
+    Clustering_Windowed_input <- cbind (as.numeric((X_whole_apps[((X_whole_apps[,2] >= start_date) & (X_whole_apps[,2] < end_date)),3])),
+                                         +as.numeric((X_whole_apps[((X_whole_apps[,2] >= start_date) & (X_whole_apps[,2] < end_date)),4])),
+                                         +as.numeric((X_whole_apps[((X_whole_apps[,2] >= start_date) & (X_whole_apps[,2] < end_date)),5])),
+                                         +as.numeric((X_whole_apps[((X_whole_apps[,2] >= start_date) & (X_whole_apps[,2] < end_date)),6])),
+                                         +as.numeric((X_whole_apps[((X_whole_apps[,2] >= start_date) & (X_whole_apps[,2] < end_date)),7])),
+                                         +as.numeric((X_whole_apps[((X_whole_apps[,2] >= start_date) & (X_whole_apps[,2] < end_date)),8])));
+    
+    # Add a row index
+    Clustering_Windowed_input_indices <- cbind(as.numeric((X_whole_apps[((X_whole_apps[,2] >= start_date) & (X_whole_apps[,2] < end_date)),1])));
+    Clustering_Windowed_input         <- cbind(Clustering_Windowed_input_indices,Clustering_Windowed_input);
+    
+    # All applications - Add Postcode,Longitude and Latitude
+    LongLatdata  <- read.csv('C:\\WORK\\RAD-99-FraudClustering\\Data\\Dataset4\\LongitudeLatitudedata.csv');
+    Clustering_Windowed_input <- cbind(Clustering_Windowed_input[1:NUM_APPLICATIONS,],LongLatdata[,4],LongLatdata[,5], as.character(LongLatdata[,3]));
+    
+    # Add Ondueremaining and score
+    Clustering_Windowed_input <- cbind(Clustering_Windowed_input[1:NUM_APPLICATIONS,1:7],as.numeric(as.character(X_allapps[1:NUM_APPLICATIONS,9])),as.numeric(as.character(X_allapps[1:NUM_APPLICATIONS,10])));
+    
+    # Add Date
+    Clustering_Windowed_input <- cbind(Clustering_Windowed_input,as.Date(X_whole_apps[1:NUM_APPLICATIONS,2]));
+    
+    # Add Loan Amount
+    Clustering_Windowed_input <- cbind(Clustering_Windowed_input,X_allapps[1:NUM_APPLICATIONS,8]);
+    #write.csv(Clustering_Windowed_input, file = "C:\\WORK\\RAD-99-FraudClustering\\Data\\Dataset4\\ClusteringWindowedInput.csv")
+    
+    ############################################################################################
+    ###########For the variables,do the WDU estimation and scaling##############################
+    ############################################################################################
+    # SORTCODE
+    NUM_LEVELS_IN_WDU <- 1000;
+    sortcode_cdfcurve <- ecdf(as.numeric(Clustering_Windowed_input[1:NUM_APPLICATIONS,2]));
+    plot(environment(sortcode_cdfcurve)$x, environment(sortcode_cdfcurve)$y, main = "CDF of Sortcode before Transformation");
+    WDU_sortcode      <- cbind(environment(sortcode_cdfcurve)$x,environment(sortcode_cdfcurve)$y, floor(environment(sortcode_cdfcurve)$y*NUM_LEVELS_IN_WDU));
+    write.csv(WDU_sortcode, file = "C:\\WORK\\RAD-99-FraudClustering\\Data\\Dataset4\\WDU_Sortcode.csv")
+    
+    # AGE
+    age_cdfcurve      <- ecdf(as.numeric(Clustering_Windowed_input[1:NUM_APPLICATIONS,3]));
+    plot(environment(age_cdfcurve)$x, environment(age_cdfcurve)$y, main = "CDF of age before Transformation");
+    WDU_age           <- cbind(environment(age_cdfcurve)$x,environment(age_cdfcurve)$y, floor(environment(age_cdfcurve)$y*NUM_LEVELS_IN_WDU));
+    write.csv(WDU_age, file = "C:\\WORK\\RAD-99-FraudClustering\\Data\\Dataset4\\WDU_Age.csv")
+    
+    # For IP Address
+    ipaddress_cdfcurve <- ecdf(as.numeric(Clustering_Windowed_input[1:NUM_APPLICATIONS,4]));
+    plot(environment(ipaddress_cdfcurve)$x, environment(ipaddress_cdfcurve)$y, main = "CDF of IPADDRESS before transformation");
+    WDU_IPAddress      <- cbind(environment(ipaddress_cdfcurve)$x,environment(ipaddress_cdfcurve)$y, floor(environment(ipaddress_cdfcurve)$y*NUM_LEVELS_IN_WDU));
+    write.csv(WDU_IPAddress, file = "C:\\WORK\\RAD-99-FraudClustering\\Data\\Dataset4\\WDU_IPAddress.csv")
+    
+    WDU_sortcode_scaled  <- {};
+    WDU_age_scaled       <- {};
+    WDU_IPAddress_scaled <- {};
+    for (l in 1:NUM_APPLICATIONS) {
+      WDU_sortcode_scaled   <- c(WDU_sortcode_scaled, WDU_sortcode[which(WDU_sortcode[,1]== as.numeric(as.character(Clustering_Windowed_input[l,2]))),3]);
+      WDU_age_scaled        <- c(WDU_age_scaled, WDU_age[which(WDU_age[,1]== as.numeric(as.character(Clustering_Windowed_input[l,3]))),3]);
+      WDU_IPAddress_scaled  <- c(WDU_IPAddress_scaled, WDU_IPAddress[which(WDU_IPAddress[,1]== as.numeric(as.character(Clustering_Windowed_input[l,4]))),3]);
+    }
+    
+ # For Longitude and Latitude
+  WDU_PCODE <- {};
+  probvalues <-  pnorm2d(LongLatdata[1:NUM_APPLICATIONS,5],LongLatdata[1:NUM_APPLICATIONS,4], rho = 0);
+  WDU_PCODE  <- cbind(LongLatdata[1:NUM_APPLICATIONS,5],LongLatdata[1:NUM_APPLICATIONS,4],floor(probvalues*NUM_LEVELS_IN_WDU));
+  write.csv(WDU_PCODE, file = "C:\\WORK\\RAD-99-FraudClustering\\Data\s\Dataset4\\WDU_PostCode.csv")
+
+  # Income
+  income_cdfcurve <- ecdf(as.numeric(Clustering_Windowed_input[1:NUM_APPLICATIONS,5]));
+  plot(environment(income_cdfcurve)$x, environment(income_cdfcurve)$y, main = "CDF of income before transformation");
+  WDU_Income      <- cbind(environment(income_cdfcurve)$x,environment(income_cdfcurve)$y, floor(environment(income_cdfcurve)$y*NUM_LEVELS_IN_WDU));
+
+  # Mobilenumber
+  mobile_cleaned <- {};
+  p = 1;
+  for (p in 1:NUM_APPLICATIONS){
+  abc <- strsplit(as.character(as.numeric(Clustering_Windowed_input[p,6])), split = "");
+  print(abc);
+  str_cleaned <-  str_c((unlist(abc)[1]),(unlist(abc)[2]),(unlist(abc)[3]),(unlist(abc)[4]),(unlist(abc)[5]));
+  mobile_cleaned <- c(mobile_cleaned,str_cleaned);
+  }
+
+  mobileno_cdfcurve <- ecdf(as.numeric(mobile_cleaned));
+  plot(environment(mobileno_cdfcurve)$x, environment(mobileno_cdfcurve)$y, main = "CDF of mobileno before transformation");
+  WDU_mobileno      <- cbind(environment(mobileno_cdfcurve)$x,environment(mobileno_cdfcurve)$y, floor(environment(mobileno_cdfcurve)$y*NUM_LEVELS_IN_WDU));
+
+  ####################################################################
+  # Add all the WDU scaled into one matrix for clustering input
+  WDU_Scaled_input <- cbind(WDU_sortcode_scaled,WDU_age_scaled,WDU_IPAddress_scaled,WDU_PCODE[,3],WDU_Income[,3],WDU_mobileno[,3]);
+    
+  ##############################################################
+  ######################Visualisae the effects of WDU###########
+  ##############################################################
+  # Sortcode
+  par(mfrow=c(1,2));
+  plot(ecdf(dist(as.numeric(Clustering_Windowed_input[1:NUM_APPLICATIONS,2]))), main = "Sortcode before transformation");                       
+  plot(ecdf(dist(WDU_sortcode_scaled)),main = "Sortcode after transformation");  
+
+  # Age
+  par(mfrow=c(1,2));
+  plot(ecdf(dist(as.numeric(Clustering_Windowed_input[1:NUM_APPLICATIONS,3]))),main = "Age before transformation");
+  plot(ecdf(dist(WDU_age_scaled)),main = "Age after transformation");
+         
+  # IPAddress
+  par(mfrow=c(1,2));
+  plot(ecdf(dist(as.numeric(Clustering_Windowed_input[1:NUM_APPLICATIONS,4]))), main = "IP Address before transformation");
+  plot(ecdf(dist(WDU_IPAddress_scaled)), main = "IP Address after transformation");
+              
+  # Income
+  par(mfrow=c(1,2));
+  plot(ecdf(dist(as.numeric(Clustering_Windowed_input[1:NUM_APPLICATIONS,5]))),main = "Income before transformation");                       
+  plot(ecdf(dist(WDU_Income[,3])),main = "Income after transformation");
+     
+  # Mobile No
+  par(mfrow=c(1,2));
+  plot(ecdf(dist(mobile_cleaned)),main = "Mobile no before transformation");                       
+  plot(ecdf(dist(WDU_mobileno[,3])),main = "Mobile no after transformation");
+    
+  #####################################################################################
+  ##############Do the Clustering With the scaled input using WONGA DISTANCE UNIT######
+  #####################################################################################
+  Total_distance     <- dist(WDU_Scaled_input);  
+                        
+  ##############HClustering Stage#################################################
+  # Run the Hierarchial clustering method
+  hc_op <- hclust(as.dist(Total_distance));
+  plot(hc_op);
+                        
+  # Cut the tree into different nodes and then visualise using dendrogram
+  NUM_NODES <- 10;  treecut_at_10_levels <- cutree(hc_op,k = NUM_NODES);
+  NUM_NODES <- 100; treecut_at_100_levels <- cutree(hc_op,k = NUM_NODES);
+  NUM_NODES <- 500; treecut_at_500_levels <- cutree(hc_op,k = NUM_NODES);
+  NUM_NODES <- 1000; treecut_at_1000_levels <- cutree(hc_op,k = NUM_NODES);
+  NUM_NODES <- 2500; treecut_at_2500_levels <- cutree(hc_op,k = NUM_NODES);
+    
+ NNUM_NODES <- 1000;
+ treecut_at_1000_levels <- cutree(hc_op,k = NUM_NODES);
+ #for (z in 1: 1000) {
+  # print(paste("For Cluster",z, "=", length(which(treecut_at_1000_levels==z))));
+  #}            
+       
+ write.csv(cbind(treecut_at_10_levels,treecut_at_100_levels,treecut_at_500_levels,treecut_at_1000_levels,treecut_at_2500_levels),file = "C:\\WORK\\RAD-99-FraudClustering\\HClust_results\\Treecutatvariouslevels.csv");
+                        
+ ###################################################################################
+ ###################################################################################
+ Application_No   <- seq(1,5000,1);
+                        
+ # Export Application_no, Accepted as Loan or not, ArrerasStatus, Clusterorder,Mixedscore
+ X_export_to_file <- cbind(Application_No,X_allapps[1:5000,c(14,15)],hc_op$order,X_allapps[1:5000,10]);
+ write.csv(X_export_to_file, file = "C:\\WORK\\RAD-99-FraudClustering\\HClust_results\\HierarchialClusteringOutput.csv")
+                        
+  ####################################################################################
+  ########################Extract the Cluster Nodes KPIs###############################
+  #####################################################################################
+   clusterKPIs_50 <- clusterKPIs(treecut_at_100_levels,500,X_allapps,Clustering_Windowed_input);
+                        
+   clusterKPIs <- function (treecut_op,NUM_NODES,X_allapps,Clustering_Windowed_input) {
+   size_count_all                     <- {};
+   mean_scores_for_all_clusters       <- {};
+   no_of_loans_all_clusters           <- {};
+   arrerars_of_loans_all_clusters     <- {};
+   
+   yout <- {};
+   for (p in 1:NUM_NODES) {
+   cluster_apps  <- Clustering_Windowed_input[as.numeric(Clustering_Windowed_input[which(treecut_op==p),1]),c(1:7)];
+   size_count    <- dim(Clustering_Windowed_input[as.numeric(Clustering_Windowed_input[which(treecut_op==p),1]),])[1];
+   mean_score    <- floor(mean(as.numeric(X_allapps[as.numeric(Clustering_Windowed_input[which(treecut_op==p),1]),10])));
+   no_of_loans   <- length(na.omit(as.numeric(as.character(X_allapps[as.numeric(Clustering_Windowed_input[which(treecut_op==p),1]),3]))));
+   print(paste("Applications belonging to Cluster", p, "Size", size_count, "Average Score",mean_score));
+   size_count_all               <- c(size_count_all,size_count);
+   mean_scores_for_all_clusters <- c(mean_scores_for_all_clusters,mean_score);
+   no_of_loans_all_clusters     <- c(mean_scores_for_all_clusters,no_of_loans);
+   }
+   yout <- cbind(mean_scores_for_all_clusters,no_of_loans_all_clusters,arrears_count_all_clusters,size_count_all);
+   return(yout);
+   }
+   ####################################################################
+   #######Update to the next window####################################
+   #####################################################################
+   Clustering_Windowed_input <- cbind(seq(1,dim(Clustering_Windowed_input)[1],1),Clustering_Windowed_input);
+   print(paste('Clustering applications from ', start_date,'to', (as.Date(end_date)-1)));
+   start_date <- as.Date(start_date) + 1; 
+   end_date   <- as.Date(end_date) + 1;
+   Sys.sleep(5);
+  }
+  print(paste('End of Hierarchial Clustering'));
+}
